@@ -1,0 +1,253 @@
+---
+title: "R Notebook"
+output:
+  html_notebook: default
+---
+
+Подгрузим необходимые библиотеки
+
+```{r}
+library(skimr)
+library(readr)
+library(Hmisc)
+library(corrplot)
+library(dplyr)
+```
+
+Загрузим датасет. Посмотрим список имеющихся столбцов
+
+```{r}
+df <- read_csv('../voting_data.csv')
+spec(df)
+```
+
+Посмотрим первые несколько строк датасета
+
+```{r}
+head(df)
+
+```
+
+Ниже представлена основная информация о столбцах: min, max, median, mean и некоторые другие
+
+```{r}
+summary(df)
+```
+
+Представим информацию о столбцах в более наглядном виде
+
+```{r}
+skim(df)
+```
+
+Заметим, что такое большое количество столбцов нам может не понадобиться. Так, количество неиспользованных бюллетеней на всех участках равно
+
+```{r}
+sum(df['N_UNUSED'])
+```
+
+А количество потерянных бюллетеней
+
+```{r}
+sum(df['N_LOST'])
+```
+
+Удалим эти столбцы в дальнейшем
+
+Посмотрим корреляционную матрицу, чтобы выяснить, если ли столбцы, значения в которых сильно коррелируют друг с другом
+
+```{r}
+corr <- cor(df[4:23])
+corrplot(corr, tl.col = "black")
+```
+
+Видим высокую корреляцию некоторых стобцов. Рассмотрим их подробнее
+
+```{r}
+corr <- cor(df[c('N_IN', 'N_VALID', 'N_STATIC')])
+corrplot(corr, tl.col = "black")
+```
+
+```{r}
+corr <- cor(df[c('N_OUT', 'N_PORTABLE')])
+corrplot(corr, tl.col = "black")
+```
+
+Удалим эти столбцы. Однако перед удалением N_OUT нам удобно создать столбец N_VOTED для подсчёта суммарного количества голосов на участке
+
+```{r}
+df['N_VOTED'] = df['N_EARLY'] + df['N_IN'] + df['N_OUT']
+df['N_VOTED']
+```
+
+Заодно добавим столбец с информацией о явке
+
+```{r}
+df['TURNOUT'] = df['N_VOTED']/df['N_ALL']
+df['TURNOUT']
+```
+
+Теперь можем удалить ненужные столбцы (N_GIVEN, N_LEFT, N_IN, N_PORTABLE, N_STATIC, N_VALID, N_UNUSED, N_LOST). Теперь наш датасет выглядит следующим образом
+
+```{r}
+if("N_GIVEN" %in% colnames(df)) {
+  df <- subset (df, select = -c(`N_GIVEN`, `N_LEFT`, `N_IN`, `N_PORTABLE`, `N_STATIC`, `N_VALID`, `N_UNUSED`, `N_LOST`))
+}
+df
+```
+
+Загрузим датасет с данными голосования по регионам
+
+```{r}
+df_regions <- read_csv('../homework04/regions_data.csv')
+for (col in colnames(df_regions))
+  if (grepl('Unnamed', col, fixed=TRUE)) {
+    df_regions <- select(df_regions, -c(col)) 
+  }
+
+head(df_regions)
+```
+
+```{r}
+CANDS <- df_regions[15:22]
+COLORS <- c('lightsalmon', 'red', 'lightblue', 'CornflowerBlue', 'yellowgreen', 'yellow', 'purple','lightgreen')
+```
+
+Создадим круговую диаграмму с результатами голосования
+
+```{r}
+slices <- sum(CANDS[1])
+labels <- "";
+for (i in 2:8) {
+  slices <- c(slices, sum(CANDS[i]))
+  p <- sum(CANDS[i])/sum(df_regions['N_VOTED'])
+  if (p > 0.05) 
+    labels <- c(labels, paste(c(round(p, 3)*100), "%"))
+  else 
+    labels <- c(labels, "")
+}
+
+pie(slices, labels=labels, col=COLORS)
+legend("topright", horiz=TRUE, cex=0.5, legend=colnames(CANDS), fill=COLORS)
+```
+
+Видим наглядное распределение результатов выборов
+
+Теперь посмотрим на распределение голосов по регионам
+
+```{r}
+k <- 1
+plot(df_regions$X1, (CANDS[k]/df_regions$N_VOTED)[, 1], col=COLORS[k], pch = 20, type="o", xlab="region", ylab="votes (%)", main="Election results", ylim=c(0, 1))
+for (k in c(2:length(CANDS))) {
+  lines(df_regions$X1, (CANDS[k]/df_regions$N_VOTED)[, 1], pch = 20, type="o", col=COLORS[k])
+}
+legend("topright", horiz=TRUE, cex=0.5, legend=colnames(CANDS), fill=COLORS)
+
+```
+
+Заметим, что нижнюю часть графика видно плохо. Рассмотрим её отдельно
+
+```{r}
+k <- 1
+plot(df_regions$X1, (CANDS[k]/df_regions$N_VOTED)[, 1], col=COLORS[k], pch = 20, type="o", xlab="region", ylab="votes (%)", main="Election results without the winner", ylim=c(0, 0.27))
+for (k in c(2:length(CANDS))) {
+  if (k == 4) next
+  else lines(df_regions$X1, (CANDS[k]/df_regions$N_VOTED)[, 1], pch = 20, type="o", col=COLORS[k])
+}
+legend("topright", horiz=TRUE, cex=0.5, legend=colnames(CANDS), fill=COLORS)
+```
+
+Посмотрим информацию о явке по регионам
+
+```{r}
+plot(df_regions$X1, df_regions$TURNOUT, col='orange', pch = 20, xlab="region", ylab="turnout (%)", main="Turnout by region")
+
+
+```
+
+Для удобства отсортируем эти данные
+
+```{r}
+plot(df_regions$X1, sort(df_regions$TURNOUT), col='orange', pch = 20, xlab="region", ylab="turnout (%)", main="Turnout by region (sorted)")
+```
+
+Видим, что основная явка - около 67 %, минимальная - чуть меньше 60 %, максимальная - почти 100 %
+
+Посмотрим, как зависит процент голосов за Путина в зависимости от явки
+
+```{r}
+df_sorted = df_regions[order(df_regions$TURNOUT, df_regions$PUTIN), ]
+plot(df_regions$X1, df_sorted$TURNOUT, col='orange', pch = 20, xlab="region", ylab="turnout (%)", main="Dependence of votes for Putin on turnout")
+lines(df_regions$X1, (df_sorted$PUTIN/df_sorted$N_VOTED), pch = 20, type="p", col=COLORS[4])
+abline(h = sum(df_regions$PUTIN)/sum(df_regions$N_VOTED), lty=2, col=COLORS[4])
+```
+
+Видим, что с увеличением явки увеличивается количество голосов за Путина. Отмечаем, что при явке меньше 70 % в большинстве регионов средний процент за Путина меньше общероссийского
+
+Построим диаграмму распределения явки по избирательным участкам
+
+```{r}
+hist(df$TURNOUT, main='Histogram of turnout by polling station', xlab='Turnout', col='orange')
+```
+
+Видим, что самая популярная явка - в районе 60 %. Отмечаем достаточно большое количество участков с явкой, близкой к 100 %
+
+Посмотрим такую же диаграмму, но по регионам
+
+```{r}
+hist(df_regions$TURNOUT, main='Histogram of turnout by polling region', xlab='Turnout', col='orange')
+```
+
+Здесь снова видим пик в районе 60 %, однако огромной явки, близкой к максимальной, не наблюдается
+
+Посмотрим такие же графики для голосов за Путина
+
+```{r}
+hist(df$PUTIN/df$N_VOTED, main='Histogram of votes for Putin by polling station', xlab='Votes for Putin', col=COLORS[4])
+```
+
+Видим, что на большинстве участков Путин получил около 75 %
+
+```{r}
+hist(df_regions$PUTIN/df_regions$N_VOTED, main='Histogram of votes for Putin by region', xlab='Votes for Putin', col=COLORS[4])
+```
+
+В большинстве регионов - аналогично. Заметим, однако, что в предыдущем графике после пика каждый следующий столбец был меньше предыдущего, в то время как в этом графике выделяется последний столбец
+
+Посмотрим график с наглядным представлением разницы явки в каждом регионе от общероссийской
+
+```{r}
+df_temp = df_regions
+df_temp$region = df_temp$X1
+df_temp$type <- ifelse(df_temp$TURNOUT < mean(df_temp$TURNOUT), "below", "above")
+df_temp$difference <- round(df_temp$TURNOUT-mean(df_temp$TURNOUT), 2)
+
+ggplot(df_temp, aes(x=region, y=difference)) + 
+  geom_bar(stat='identity', aes(fill=type), width=.5)  +
+  scale_fill_manual(name="Turnout", 
+                    labels = c("Above Average", "Below Average"), 
+                    values = c("above"="#00ba38", "below"="#f8766d")) + 
+  labs(subtitle="Election turnout", 
+       title= "Diverging Bars") + 
+  coord_flip()
+```
+
+Видим так называемые региоными с электоральными аномалиями - это длинные зелёные линии
+
+Посмотрим аналогичный график с голосами за Путина
+
+```{r}
+df_temp$type <- ifelse(df_temp$PUTIN/df_temp$N_VOTED < mean(df_temp$PUTIN/df_temp$N_VOTED), "below", "above")
+df_temp$difference <- round(df_temp$PUTIN/df_temp$N_VOTED-mean(df_temp$PUTIN/df_temp$N_VOTED), 2)
+
+ggplot(df_temp, aes(x=region, y=difference)) + 
+  geom_bar(stat='identity', aes(fill=type), width=.5)  +
+  scale_fill_manual(name="Putin votes (%)", 
+                    labels = c("Above Average", "Below Average"), 
+                    values = c("above"="#00ba38", "below"="#f8766d")) + 
+  labs(subtitle="Putin votes (%)", 
+       title= "Diverging Bars") + 
+  coord_flip()
+```
+
+Здесь разница распределена более равномерно, колеблется в районе 10 %
